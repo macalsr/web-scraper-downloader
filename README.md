@@ -1,8 +1,9 @@
-# Web Scraper Downloader (CSV → JSON + Assets)
+# Web Scraper Downloader (CSV → JSON + Assets + Consolidated CSV)
 
 CLI tool that reads URLs from a CSV, fetches each page, extracts structured data, downloads assets (e.g., images), and outputs:
-- `data.json` per URL
-- `report.csv` summary (success/error)
+- `data.json` per URL (optional)
+- `data.csv` consolidated (optional)
+- `report.csv` summary (success/error/skipped)
 
 This is a portfolio-focused MVP that matches common freelancing tasks like “extract and download data from websites”.
 
@@ -17,7 +18,10 @@ Given a CSV with URLs, for each URL the tool:
 3. **Retries on network errors** using exponential backoff (1s, 2s, 4s…)
 4. **Extracts data** (title/description/h1/canonical/OG tags/text preview/links/images)
 5. **Downloads images** into an organized local folder
-6. Writes a **per-item JSON** output and a **final report CSV**
+6. Writes outputs:
+   - per-item `data.json` (optional)
+   - consolidated `data.csv` (optional)
+   - `report.csv` (always)
 
 ---
 
@@ -39,6 +43,11 @@ Given a CSV with URLs, for each URL the tool:
 - `image_urls` found on the page
 - Downloaded image paths + counts
 
+### Outputs
+- `data.json` per URL
+- `data.csv` consolidated (one row per URL)
+- `report.csv` with `ok` / `error` / `skipped`
+
 ### Extensibility
 - Per-domain adapters (site-specific extractors)
   - `GenericHtmlExtractor` works as a fallback for most pages
@@ -56,6 +65,7 @@ scraper/
 main.py
 io_utils.py
 report.py
+exporter.py             # consolidated data.csv
 downloader.py
 http_client.py          # retry/backoff + SSL
 rate_limiter.py         # rate limiting between URLs
@@ -127,21 +137,45 @@ https://www.iana.org/domains/reserved
 ### Git Bash / macOS / Linux
 
 ```bash
-PYTHONPATH=src python src/scraper/main.py --input sample/input.csv --output output --rate 1.2
+PYTHONPATH=src python src/scraper/main.py --input sample/input.csv --output output --rate 1.2 --format both
 ```
 
 ### PowerShell
 
 ```powershell
 $env:PYTHONPATH="src"
-python src\scraper\main.py --input sample\input.csv --output output --rate 1.2
+python src\scraper\main.py --input sample\input.csv --output output --rate 1.2 --format both
 ```
 
-**Parameters**
+---
 
-* `--input`: path to CSV
-* `--output`: output directory
-* `--rate`: minimum seconds between URLs (rate limiting)
+## CLI Parameters
+
+* `--input` : path to CSV
+* `--output` : output directory
+* `--rate` : minimum seconds between URLs (rate limiting)
+* `--format` : `json` | `csv` | `both` (default: `both`)
+* `--resume` : skip URLs already processed (checks for `data.json` in the item folder)
+
+### Examples
+
+Generate both JSON per item and a consolidated CSV:
+
+```bash
+PYTHONPATH=src python src/scraper/main.py --input sample/input.csv --output output --rate 1.2 --format both
+```
+
+Only consolidated CSV:
+
+```bash
+PYTHONPATH=src python src/scraper/main.py --input sample/input.csv --output output --rate 1.2 --format csv
+```
+
+Resume after a partial run (skip already processed):
+
+```bash
+PYTHONPATH=src python src/scraper/main.py --input sample/input.csv --output output --rate 1.2 --resume
+```
 
 ---
 
@@ -149,11 +183,12 @@ python src\scraper\main.py --input sample\input.csv --output output --rate 1.2
 
 After running, you will get:
 
-* `output/<item>/data.json`
+* `output/<item>/data.json` (if `--format json|both`)
 * `output/<item>/images/*` (downloaded assets)
-* `output/report.csv`
+* `output/data.csv` (if `--format csv|both`)
+* `output/report.csv` (always)
 
-Example `data.json`:
+### Example `data.json`
 
 ```json
 {
@@ -184,12 +219,17 @@ Example `data.json`:
 }
 ```
 
-Example `report.csv`:
+### Example `data.csv` (consolidated)
+
+One row per URL, with flattened fields such as `url`, `title`, `h1`, `canonical_url`, `og_title`, `og_description`, `og_image`, `images_found`, `images_downloaded`, `links_found`, `text_preview`.
+
+### Example `report.csv`
 
 ```csv
 url,status,output_dir,error
 https://httpbin.org/html,ok,output/httpbin-org-html-1,
 https://site-that-fails,error,output/site-that-fails-2,"Timeout"
+https://already-processed,skipped,output/already-processed-3,
 ```
 
 ---
@@ -223,6 +263,6 @@ This allows precise extraction (price/SKU/author/date/etc.) for that specific si
 ---
 
 ## License
-```
-MIT
-```
+
+MIT (or choose your preferred license)
+
