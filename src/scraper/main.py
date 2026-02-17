@@ -4,9 +4,11 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from scraper.io_utils import read_csv_urls, ensure_dir, write_json
-from scraper.extractor import SimpleHtmlExtractor
 from scraper.downloader import download_images
 from scraper.report import ReportRow, write_report_csv
+
+from scraper.rate_limiter import RateLimiter
+from scraper.sites.registry import pick_extractor
 
 
 def slugify(text: str) -> str:
@@ -24,45 +26,62 @@ def make_item_dir(base_out: Path, url: str, idx: int) -> Path:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Web Scraper Downloader (CSV -> JSON + imagens)")
-    parser.add_argument("--input", required=True, help="Caminho do CSV com coluna 'url'")
-    parser.add_argument("--output", required=True, help="Pasta de saída")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", required=True)
+    parser.add_argument("--output", required=True)
+    parser.add_argument("--rate", type=float, default=0.8, help="Min seconds between URLs")
     args = parser.parse_args()
 
     csv_path = Path(args.input)
     out_base = Path(args.output)
-
     ensure_dir(out_base)
 
     urls = read_csv_urls(csv_path)
-    extractor = SimpleHtmlExtractor()
 
+    limiter = RateLimiter(min_interval_s=args.rate)
     report_rows = []
 
     for idx, url in enumerate(urls, start=1):
+        limiter.wait()  # ✅ rate limit antes de cada URL
+
         item_dir = make_item_dir(out_base, url, idx)
         images_dir = item_dir / "images"
+
         try:
+            extractor = pick_extractor(url)  # ✅ escolhe adapter por domínio
             data = extractor.extract(url)
+
             saved_images = download_images(data.image_urls, images_dir)
 
             payload = {
                 "url": data.url,
                 "title": data.title,
+                "h1": data.h1,
                 "description": data.description,
+                "canonical_url": data.canonical_url,
+                "og": data.og or {},
+                "text_preview": data.text_preview,
+                "links": data.links or [],
+                "counts": {
+                    "images_found": len(data.image_urls),
+                    "links_found": len(data.links or []),
+                    "images_downloaded": len(saved_images),
+                },
                 "images": saved_images,
             }
+
             ensure_dir(item_dir)
             write_json(item_dir / "data.json", payload)
 
             report_rows.append(ReportRow(url=url, status="ok", output_dir=str(item_dir)))
             print(f"[OK] {url} -> {item_dir}")
+
         except Exception as e:
             report_rows.append(ReportRow(url=url, status="error", output_dir=str(item_dir), error=str(e)))
             print(f"[ERR] {url} -> {e}")
 
     write_report_csv(out_base / "report.csv", report_rows)
-    print(f"\nRelatório gerado em: {out_base / 'report.csv'}")
+    print(f"\nReport: {out_base / 'report.csv'}")
 
 
 if __name__ == "__main__":
