@@ -15,6 +15,7 @@ class ExtractedItem:
     og: Dict[str, str] = None
     text_preview: str = ""
     links: List[str] = None
+    domain: str = ""
 
 
 class BaseExtractor:

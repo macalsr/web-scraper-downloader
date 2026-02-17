@@ -8,6 +8,12 @@ from scraper.sites.base import BaseExtractor, ExtractedItem
 
 
 class GenericHtmlExtractor(BaseExtractor):
+
+    def __init__(self, max_images: int = 20, max_links: int = 30, text_preview_limit: int = 700):
+        self.max_images = max_images
+        self.max_links = max_links
+        self.text_preview_limit = text_preview_limit
+
     def supports(self, url: str) -> bool:
         return True  # fallback
 
@@ -107,7 +113,7 @@ class GenericHtmlExtractor(BaseExtractor):
                 out.append(u)
         return out[:20]
 
-    def _get_links(self, soup: BeautifulSoup, base_url: str, limit: int = 30) -> List[str]:
+    def _get_links(self, soup: BeautifulSoup, base_url: str, limit: int = 10) -> List[str]:
         links: List[str] = []
         for a in soup.select("a[href]"):
             href = (a.get("href") or "").strip()
@@ -123,7 +129,7 @@ class GenericHtmlExtractor(BaseExtractor):
                 out.append(u)
         return out[:limit]
 
-    def _get_text_preview(self, soup: BeautifulSoup, limit: int = 700) -> str:
+    def _get_text_preview(self, soup: BeautifulSoup, limit: int = 300) -> str:
         text = soup.get_text(" ", strip=True)
         text = " ".join(text.split())
         return text[:limit]
