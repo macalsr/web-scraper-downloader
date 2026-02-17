@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from scraper.io_utils import read_csv_urls, ensure_dir, write_json
 from scraper.downloader import download_images
 from scraper.report import ReportRow, write_report_csv
-
+from scraper.exporter import export_data_csv
 from scraper.rate_limiter import RateLimiter
 from scraper.sites.registry import pick_extractor
 
@@ -34,6 +34,17 @@ def main() -> None:
     parser.add_argument("--max-links", type=int, default=30, help="Max links extracted per page")
     parser.add_argument("--text-preview", type=int, default=700, help="Max chars for text preview")
     parser.add_argument("--only-domain", default="", help="Process only URLs that match this domain (e.g. example.com)")
+    parser.add_argument(
+        "--format",
+        choices=["json", "csv", "both"],
+        default="both",
+        help="Output format: json per item, consolidated csv, or both"
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Skip URLs that already have output/<item>/data.json"
+    )
 
     args = parser.parse_args()
 
@@ -49,10 +60,18 @@ def main() -> None:
     limiter = RateLimiter(min_interval_s=args.rate)
     report_rows = []
 
+    all_payloads = []
+
     for idx, url in enumerate(urls, start=1):
         limiter.wait()  # ✅ rate limit antes de cada URL
 
         item_dir = make_item_dir(out_base, url, idx)
+
+        if args.resume and already_processed(item_dir):
+            print(f"[SKIP] {url} (already processed)")
+            report_rows.append(ReportRow(url=url, status="skipped", output_dir=str(item_dir), error=""))
+            continue
+
         images_dir = item_dir / "images"
 
         try:
@@ -83,9 +102,14 @@ def main() -> None:
                 "images": saved_images,
                 "domain" : urlparse(url).netloc
             }
+            if args.format in ("csv", "both"):
+                all_payloads.append(payload)
 
             ensure_dir(item_dir)
-            write_json(item_dir / "data.json", payload)
+
+            if args.format in ("json", "both"):
+                ensure_dir(item_dir)
+                write_json(item_dir / "data.json", payload)
 
             report_rows.append(ReportRow(url=url, status="ok", output_dir=str(item_dir)))
             print(f"[OK] {url} -> {item_dir}")
@@ -95,8 +119,14 @@ def main() -> None:
             print(f"[ERR] {url} -> {e}")
 
     write_report_csv(out_base / "report.csv", report_rows)
+    if args.format in ("csv", "both"):
+        export_data_csv(out_base / "data.csv", all_payloads)
+        print(f"Data CSV: {out_base / 'data.csv'}")
+
     print(f"\nReport: {out_base / 'report.csv'}")
 
+def already_processed(item_dir: Path) -> bool:
+    return (item_dir / "data.json").exists()
 
 if __name__ == "__main__":
     main()
